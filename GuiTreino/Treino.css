@@ -1,0 +1,87 @@
+/* Reset básico */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background: linear-gradient(135deg, #f9f9f9, #e3f2fd);
+    color: #333;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Navbar */
+nav {
+    background-color: #222;
+    color: white;
+    display: flex;
+    justify-content: space-between;
+    padding: 15px 30px;
+    align-items: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+nav .logo {
+    font-size: 20px;
+    font-weight: bold;
+}
+nav .menu {
+    list-style: none;
+    display: flex;
+    gap: 20px;
+}
+nav .menu li a {
+    color: white;
+    text-decoration: none;
+    font-weight: bold;
+    transition: color 0.3s;
+}
+nav .menu li a:hover {
+    color: #ff9800;
+}
+nav .menu li a.ativo {
+    color: #ff9800;
+}
+
+/* Área principal */
+section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 40px;
+}
+
+section h1 {
+    font-size: 2rem;
+    margin-bottom: 20px;
+    color: #222;
+}
+
+section p {
+    font-size: 1.2rem;
+    margin-bottom: 20px;
+}
+
+/* Botão */
+button {
+    background-color: #ff9800;
+    border: none;
+    padding: 15px 30px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: bold;
+    color: white;
+    transition: transform 0.2s, background-color 0.3s;
+}
+
+button:hover {
+    background-color: #e68900;
+    transform: scale(1.05);
+}

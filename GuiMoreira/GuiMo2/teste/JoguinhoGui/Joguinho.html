@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stick Run</title>
+  <style>
+    :root{
+      --bg:#f5f7fb; --ink:#1d2433; --muted:#8a94a6; --accent:#4f46e5; --good:#16a34a; --bad:#dc2626;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;}
+    body{
+      margin:0; background:var(--bg); color:var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      display:flex; flex-direction:column; align-items:center; gap:12px; padding:16px;
+    }
+    h1{font-size: clamp(18px, 2vw, 22px); margin: 8px 0 0}
+    .wrap{
+      width:min(900px, 96vw);
+      background:white; border:1px solid #e6e9ef; border-radius:16px; box-shadow: 0 6px 20px rgba(10,10,30,.06);
+      padding:14px 14px 8px; position:relative;
+    }
+    .hud{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px}
+    .hud .left{display:flex; align-items:center; gap:12px}
+    .pill{font-size:12px; color:#334155; background:#eef2ff; border:1px solid #e0e7ff; padding:6px 10px; border-radius:999px}
+    .btn{appearance:none; border:1px solid #e5e7eb; background:#fff; color:var(--ink); padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600}
+    .btn:hover{border-color:#d1d5db}
+    .btn.primary{background:var(--accent); border-color:transparent; color:#fff}
+    canvas{width:100%; height:auto; display:block; border-radius:12px; background:linear-gradient(#e6f3ff, #fefefe 55%)}
+    .help{font-size:12px; color:var(--muted); margin:6px 2px 2px}
+    .overlay{position:absolute; inset:14px 14px 8px 14px; display:none; align-items:center; justify-content:center}
+    .card{
+      background: rgba(255,255,255,.94);
+      backdrop-filter: blur(4px);
+      border:1px solid #e5e7eb; border-radius:16px; padding:18px; max-width:420px;
+      text-align:center; box-shadow:0 10px 30px rgba(0,0,0,.08);
+    }
+    .card h2{margin:0 0 8px}
+    .card p{margin:0 0 12px; color:#475569}
+    .score{font-variant-numeric: tabular-nums; letter-spacing:.04em}
+  </style>
+</head>
+<body>
+  <h1>Stick Run — um mini DinoRun com boneco palito</h1>
+  <div class="wrap" id="wrap">
+    <div class="hud">
+      <div class="left">
+        <span class="pill">Pular: Espaço/↑ • Agachar: ↓ • Pausar: P</span>
+      </div>
+      <div class="right">
+        <button class="btn" id="pauseBtn" title="Pausar/Retomar (P)">Pausar</button>
+        <button class="btn primary" id="restartBtn">Reiniciar</button>
+      </div>
+    </div>
+    <canvas id="game" width="960" height="300" aria-label="Stick Run"></canvas>
+    <div class="overlay" id="overlay">
+      <div class="card">
+        <h2 id="statusTitle">Pronto?</h2>
+        <p id="statusText">Pressione <b>Espaço</b> ou toque para começar.</p>
+        <p class="score" id="finalScore"></p>
+        <button class="btn primary" id="startBtn">Começar</button>
+      </div>
+    </div>
+    <div class="help">Dica: quanto mais tempo você sobreviver, mais rápido fica. O recorde fica salvo no seu navegador.</div>
+  </div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('overlay');
+  const startBtn = document.getElementById('startBtn');
+  const restartBtn = document.getElementById('restartBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const statusTitle = document.getElementById('statusTitle');
+  const statusText = document.getElementById('statusText');
+  const finalScore = document.getElementById('finalScore');
+
+  // HiDPI rendering
+  function fitCanvasToCSS(){
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round((rect.width * 0.3125) * dpr); // keep ~960x300 ratio
+    scale = dpr;
+  }
+  let scale = 1; fitCanvasToCSS();
+  window.addEventListener('resize', fitCanvasToCSS);
+
+  // Game constants
+  const GROUND_Y = () => canvas.height * 0.78;
+  const GRAVITY = 0.0019;      // px/ms^2
+  const JUMP_VEL = -0.76;      // px/ms
+  const DUCK_FACTOR = 0.62;    // hitbox while ducking
+  const PLAYER_X = () => canvas.width*0.12;
+  const BASE_SPEED = 0.38;     // px/ms base world speed
+  const SPEED_RAMP = 0.00006;  // speed increase per ms
+  const OBST_MIN_GAP = 450;    // ms
+  const OBST_MAX_GAP = 1300;   // ms
+
+  // Game state
+  let state = 'menu'; // 'menu'|'playing'|'paused'|'gameover'
+  let startedOnce = false;
+  let last = 0, acc = 0;
+  let worldSpeed = BASE_SPEED;
+  let score = 0, best = Number(localStorage.getItem('stickrun_best')||0);
+  let clouds = [];
+  let obstacles = [];
+
+  const player = {
+    x: 0, y: 0, vy: 0,
+    w: 34, h: 64,
+    onGround: false,
+    ducking: false,
+    animT: 0,
+  };
+
+  function reset(){
+    worldSpeed = BASE_SPEED; score = 0; obstacles = []; clouds = [];
+    player.x = PLAYER_X();
+    player.y = GROUND_Y() - player.h;
+    player.vy = 0; player.onGround = true; player.ducking = false; player.animT = 0;
+    last = performance.now(); acc = 0; spawnInitialClouds();
+  }
+
+  function spawnInitialClouds(){
+    for(let i=0;i<4;i++){
+      clouds.push({x: Math.random()*canvas.width, y: 40+Math.random()*80, s: 0.08+Math.random()*0.06});
+    }
+  }
+
+  // Input
+  let held = new Set();
+  function jump(){
+    if(player.onGround){
+      player.vy = JUMP_VEL * (player.ducking?0.92:1);
+      player.onGround = false;
+    }
+  }
+  function duck(on){ player.ducking = on && player.onGround; }
+
+  document.addEventListener('keydown', (e)=>{
+    const k = e.key.toLowerCase(); held.add(k);
+    if(k===' '||k==='arrowup'){ e.preventDefault(); if(state==='menu' || state==='gameover'){start();} else if(state==='playing'){ jump(); } }
+    if(k==='arrowdown'){ e.preventDefault(); if(state==='playing'){ duck(true); }}
+    if(k==='p'){ togglePause(); }
+  });
+  document.addEventListener('keyup', (e)=>{
+    const k = e.key.toLowerCase(); held.delete(k);
+    if(k==='arrowdown'){ duck(false); }
+  });
+
+  // Touch
+  canvas.addEventListener('touchstart', (e)=>{
+    if(state==='menu' || state==='gameover'){ start(); return; }
+    if(state==='playing'){
+      if(e.touches.length>1){ duck(true); } else { jump(); }
+    }
+  }, {passive:true});
+  canvas.addEventListener('touchend', ()=> duck(false));
+
+  startBtn.onclick = ()=> start();
+  restartBtn.onclick = ()=> { reset(); state='menu'; showOverlay('Pronto?', 'Pressione Espaço ou toque para começar.', ''); };
+  pauseBtn.onclick = ()=> togglePause();
+
+  function togglePause(){
+    if(state==='playing'){ state='paused'; showOverlay('Pausado', 'Pressione P ou clique para retomar.', formatScores()); }
+    else if(state==='paused'){ hideOverlay(); state='playing'; last = performance.now(); requestAnimationFrame(loop); }
+  }
+
+  function start(){
+    if(state==='playing') return;
+    hideOverlay(); reset(); state='playing'; startedOnce = true; last = performance.now(); requestAnimationFrame(loop);
+  }
+
+  function showOverlay(title, text, extra){
+    statusTitle.textContent = title; statusText.innerHTML = text; finalScore.innerHTML = extra; overlay.style.display='flex';
+  }
+  function hideOverlay(){ overlay.style.display='none'; }
+
+  function formatScores(){
+    return `<span class="score">Pontuação: <b>${Math.floor(score)}</b> • Recorde: <b>${Math.floor(best)}</b></span>`;
+  }
+
+  function spawnObstacle(){
+    const types = [
+      // cacto baixo
+      {w: 18, h: 44, y: () => GROUND_Y()-44, kind:'small'},
+      // bloco médio
+      {w: 26, h: 60, y: () => GROUND_Y()-60, kind:'tall'},
+      // pássaro (alto ou médio)
+      {w: 34, h: 24, y: () => GROUND_Y()-(Math.random()<.5? 110: 70), kind:'bird'},
+    ];
+    const t = types[(Math.random()*types.length)|0];
+    obstacles.push({ x: canvas.width + 10, y: t.y(), w: t.w, h: t.h, kind: t.kind, flap: 0 });
+  }
+
+  let nextObstIn = 800; // ms until next obstacle
+
+  function update(dt){
+    // world speed ramps with time
+    worldSpeed += SPEED_RAMP * dt;
+    score += dt*0.015 * (1 + (worldSpeed-BASE_SPEED));
+
+    // clouds
+    clouds.forEach(c=>{ c.x -= dt*(c.s*worldSpeed*2); if(c.x<-80) {c.x = canvas.width+80; c.y=40+Math.random()*80; c.s=0.08+Math.random()*0.06;} });
+
+    // ground + player physics
+    player.vy += GRAVITY*dt; player.y += player.vy*dt;
+    const gy = GROUND_Y()- (player.ducking ? player.h*DUCK_FACTOR : player.h);
+    if(player.y>=gy){ player.y = gy; player.vy = 0; player.onGround = true; }
+
+    // simple run animation time
+    player.animT += dt * (player.onGround ? 1.1 + worldSpeed*0.9 : 0.4);
+
+    // spawn obstacles
+    nextObstIn -= dt;
+    if(nextObstIn <= 0){ spawnObstacle(); nextObstIn = OBST_MIN_GAP + Math.random()*(OBST_MAX_GAP-OBST_MIN_GAP) / (0.7 + worldSpeed); }
+
+    // move obstacles
+    obstacles.forEach(o=>{ o.x -= dt*worldSpeed* (o.kind==='bird' ? 1.2 : 1);
+      if(o.kind==='bird'){ o.flap += dt*0.02; }
+    });
+    // remove offscreen
+    obstacles = obstacles.filter(o=> o.x > -o.w-10);
+
+    // collisions
+    const hb = getPlayerHitbox();
+    for(const o of obstacles){
+      const ob = {x:o.x, y:o.y, w:o.w, h:o.h};
+      if(rectsOverlap(hb, ob)){
+        state='gameover'; best = Math.max(best, Math.floor(score));
+        localStorage.setItem('stickrun_best', best);
+        showOverlay('Fim de jogo', 'Você bateu em um obstáculo.', formatScores());
+        return;
+      }
+    }
+  }
+
+  function rectsOverlap(a,b){
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+
+  function getPlayerHitbox(){
+    const w = player.w * (player.ducking? 1.05:1);
+    const h = player.h * (player.ducking? DUCK_FACTOR:1);
+    return { x: player.x - w*0.4, y: player.y, w, h };
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // horizon
+    const gy = GROUND_Y();
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(0, gy+2, canvas.width, 4);
+    ctx.fillStyle = '#cbd5e1';
+    for(let i=0;i<canvas.width;i+=24){ ctx.fillRect(i, gy+6, 12, 2); }
+
+    // clouds
+    ctx.fillStyle = '#ffffff';
+    clouds.forEach(c=> drawCloud(c.x, c.y, 18));
+
+    // obstacles
+    obstacles.forEach(o=> drawObstacle(o));
+
+    // player
+    drawPlayer();
+
+    // score
+    ctx.fillStyle = '#0f172a';
+    ctx.font = `${14*scale}px ui-sans-serif,system-ui,Segoe UI,Roboto`;
+    ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+    ctx.fillText(`Score ${Math.floor(score)}`, canvas.width-14*scale, 12*scale);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText(`Best ${best}`, 14*scale, 12*scale);
+  }
+
+  function drawCloud(x,y,r){
+    ctx.save(); ctx.translate(x,y);
+    circle(0,0,r); circle(r*0.8,-r*0.4,r*0.8); circle(-r*0.8,-r*0.3,r*0.7); circle(r*1.6,0,r*0.7); circle(-r*1.5,0,r*0.6);
+    ctx.restore();
+  }
+  function circle(x,y,r){ ctx.beginPath(); ctx.arc(x,y,r*scale,0,Math.PI*2); ctx.fill(); }
+
+  function drawObstacle(o){
+    ctx.save(); ctx.translate(o.x, o.y);
+    if(o.kind==='bird'){
+      // simple bird: body + flapping wings
+      ctx.fillStyle = '#111827';
+      ctx.fillRect(0, 6*scale, o.w*scale, (o.h-6)*scale);
+      const wingY = Math.sin(o.flap)*8*scale;
+      ctx.fillRect(o.w*0.2*scale, wingY, o.w*0.6*scale, 6*scale);
+      ctx.fillRect(o.w*0.35*scale, wingY-6*scale, o.w*0.3*scale, 4*scale);
+    } else {
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, o.w*scale, o.h*scale);
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(o.w*0.3*scale, 0, 3*scale, o.h*scale);
+    }
+    ctx.restore();
+  }
+
+  function drawPlayer(){
+    ctx.save();
+    const hb = getPlayerHitbox();
+    // optional: visualize hitbox (debug)
+    // ctx.strokeStyle = 'rgba(255,0,0,.25)'; ctx.strokeRect(hb.x, hb.y, hb.w, hb.h);
+
+    ctx.translate(player.x, player.y);
+    const unit = scale; // for stroke sizes
+    ctx.strokeStyle = '#111827';
+    ctx.lineWidth = 3*unit; ctx.lineCap='round';
+
+    const headR = 10*unit;
+    const torsoH = (player.h* (player.ducking? DUCK_FACTOR:1)) - headR*2 - 6*unit;
+
+    // Head
+    ctx.beginPath(); ctx.arc(0, -torsoH - headR, headR, 0, Math.PI*2); ctx.stroke();
+
+    // Torso
+    ctx.beginPath(); ctx.moveTo(0, -torsoH); ctx.lineTo(0, 0); ctx.stroke();
+
+    // Arms
+    const swing = Math.sin(player.animT*0.18) * (player.ducking? 4*unit : 10*unit);
+    const armY = -torsoH*0.6;
+    ctx.beginPath();
+    if(player.ducking){
+      ctx.moveTo(0, armY); ctx.lineTo(10*unit, armY+6*unit);
+      ctx.moveTo(0, armY); ctx.lineTo(-10*unit, armY+6*unit);
+    } else {
+      ctx.moveTo(0, armY); ctx.lineTo(12*unit + swing, armY+6*unit);
+      ctx.moveTo(0, armY); ctx.lineTo(-12*unit - swing, armY+6*unit);
+    }
+    ctx.stroke();
+
+    // Legs (running)
+    const pace = player.onGround ? Math.sin(player.animT*0.25) : 0.2;
+    const spread = player.ducking ? 8*unit : 12*unit;
+    const len = player.ducking ? 16*unit : 22*unit;
+    ctx.beginPath();
+    ctx.moveTo(0, 0); ctx.lineTo(spread + pace*6*unit, len);
+    ctx.moveTo(0, 0); ctx.lineTo(-spread - pace*6*unit, len);
+    ctx.stroke();
+
+    // Ground contact dot
+    ctx.fillStyle='#111827'; ctx.fillRect(-1.5*unit, len-1.5*unit, 3*unit, 3*unit);
+
+    ctx.restore();
+  }
+
+  function loop(ts){
+    if(state!=='playing') return;
+    const dt = Math.min(32, ts - last || 16); // clamp to avoid spikes
+    last = ts;
+    update(dt);
+    draw();
+    if(state==='playing') requestAnimationFrame(loop);
+  }
+
+  // first load
+  reset();
+  showOverlay('Pronto?', 'Pressione <b>Espaço</b> ou toque para começar.', '');
+})();
+</script>
+</body>
+</html>
