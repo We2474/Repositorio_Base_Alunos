@@ -1,0 +1,31 @@
+Exercício 1: Função Simples 
+Crie uma função chamada saudacao() que imprime "Olá, mundo!" quando chamada. 
+
+Exercício 2: Função com Parâmetro 
+Crie uma função chamada mensagem_personalizada(nome) que recebe um nome como parâmetro e imprime: 
+"Olá, [nome]! Bem-vindo(a)."
+
+Exercício 3: Função com Condicional 
+Crie uma função chamada eh_par(numero) que recebe um número e retorna True se o número for par e False se for ímpar. 
+
+Exercício 4: Função com Múltiplos Parâmetros 
+Crie uma função chamada soma(a, b) que recebe dois números e retorna a soma deles. 
+
+Exercício 5: Função com Retorno Condicional 
+Crie uma função chamada maior_numero(a, b) que recebe dois números e retorna o maior entre eles. Se forem iguais, retorne "São iguais". 
+
+Exercício 6 : 
+Crie eh_positivo(numero) que retorna "Positivo", "Negativo" ou "Zero" conforme o número. 
+
+Exercício 7: Função com Múltiplos Retornos 
+Crie uma função chamada operacoes_basicas(a, b) que recebe dois números e retorna a soma, subtração, multiplicação e divisão entre eles (nessa ordem). 
+
+Exercício 8: Função com Verificação 
+Crie uma função chamada pode_votar(idade) que recebe uma idade e retorna "Pode votar" se a idade for >= 16, caso contrário, retorna "Não pode votar". 
+
+Exercício 9: Função com String 
+Crie uma função chamada inicial(nome) que recebe um nome e retorna a primeira letra dele em maiúscula. 
+Exemplo: Se o nome for "ana", retorna "A". 
+
+Exercício 10: Função com Comparação 
+Crie uma função chamada comparar_strings(s1, s2) que recebe duas strings e retorna True se elas forem iguais (ignorando maiúsculas/minúsculas) e False caso contrário.
